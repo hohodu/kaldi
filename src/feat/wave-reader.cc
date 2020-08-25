@@ -111,15 +111,17 @@ static void WriteUint16(std::ostream &os, int16 i) {
     KALDI_ERR << "WaveData: error writing to stream.";
 }
 
-void WaveInfo::Read(std::istream &is) {
+int32 WaveInfo::Read(std::istream &is) {
   WaveHeaderReadGofer reader(is);
   reader.Read4ByteTag();
   if (strcmp(reader.tag, "RIFF") == 0)
     reverse_bytes_ = false;
   else if (strcmp(reader.tag, "RIFX") == 0)
     reverse_bytes_ = true;
-  else
+  else {
     KALDI_ERR << "WaveData: expected RIFF or RIFX, got " << reader.tag;
+    return -1;
+  }
 
 #ifdef __BIG_ENDIAN__
   reverse_bytes_ = !reverse_bytes_;
@@ -163,11 +165,13 @@ void WaveInfo::Read(std::istream &is) {
     if (subchunk1_size < 16) {
       KALDI_ERR << "WaveData: expect PCM format data to have fmt chunk "
                 << "of at least size 16.";
+      return -1;
     }
   } else if (audio_format == 0xFFFE) {  // WAVE_FORMAT_EXTENSIBLE
     uint16 extra_size = reader.ReadUint16();
     if (subchunk1_size < 40 || extra_size < 22) {
       KALDI_ERR << "WaveData: malformed WAVE_FORMAT_EXTENSIBLE format data.";
+      return -1;
     }
     reader.ReadUint16();  // Unused for PCM.
     reader.ReadUint32();  // Channel map: we do not care.
@@ -185,26 +189,39 @@ void WaveInfo::Read(std::istream &is) {
     if (guid1 != 0x00000001 || guid2 != 0x00100000 ||
         guid3 != 0xAA000080 || guid4 != 0x719B3800) {
       KALDI_ERR << "WaveData: unsupported WAVE_FORMAT_EXTENSIBLE format.";
+      return -1;
     }
   } else {
     KALDI_ERR << "WaveData: can read only PCM data, format id in file is: "
               << audio_format;
+    return -1;
   }
 
   for (uint32 i = fmt_chunk_read; i < subchunk1_size; ++i)
     is.get();  // use up extra data.
 
-  if (num_channels_ == 0)
-    KALDI_ERR << "WaveData: no channels present";
+  if (num_channels_ == 0) {
+      KALDI_ERR << "WaveData: no channels present";
+      return -1;
+  }
   if (bits_per_sample != 16)
-    KALDI_ERR << "WaveData: unsupported bits_per_sample = " << bits_per_sample;
+  {
+      KALDI_ERR << "WaveData: unsupported bits_per_sample = " << bits_per_sample;
+      return -1;
+  }
   if (byte_rate != sample_rate * bits_per_sample/8 * num_channels_)
-    KALDI_ERR << "Unexpected byte rate " << byte_rate << " vs. "
+  {
+      KALDI_ERR << "Unexpected byte rate " << byte_rate << " vs. "
               << sample_rate << " * " << (bits_per_sample/8)
               << " * " << num_channels_;
+      return -1;
+  }
   if (block_align != num_channels_ * bits_per_sample/8)
+  {
     KALDI_ERR << "Unexpected block_align: " << block_align << " vs. "
               << num_channels_ << " * " << (bits_per_sample/8);
+    return -1;
+  }
 
   riff_chunk_read += 4 + subchunk1_size;
   // size of what we just read, 4 for subchunk1_size + subchunk1_size itself.
@@ -267,13 +284,18 @@ void WaveInfo::Read(std::istream &is) {
     samp_count_ = -1;
   else
     samp_count_ = data_chunk_size / block_align;
+
+  return 0;
 }
 
-void WaveData::Read(std::istream &is) {
+int32 WaveData::Read(std::istream &is) {
   const uint32 kBlockSize = 1024 * 1024;
 
   WaveInfo header;
-  header.Read(is);
+  int ret = header.Read(is);
+  if (0 != ret) {
+      return -1;
+  }
 
   data_.Resize(0, 0);  // clear the data.
   samp_freq_ = header.SampFreq();
@@ -294,11 +316,15 @@ void WaveData::Read(std::istream &is) {
       bytes_to_go -= bytes_read;
   }
 
-  if (is.bad())
+  if (is.bad()) {
     KALDI_ERR << "WaveData: file read error";
+    return -1;
+  }
 
-  if (buffer.size() == 0)
+  if (buffer.size() == 0) {
     KALDI_ERR << "WaveData: empty file (no data)";
+    return -1;
+  }
 
   if (!header.IsStreamed() && buffer.size() < header.DataBytes()) {
     KALDI_WARN << "Expected " << header.DataBytes() << " bytes of wave data, "
@@ -319,6 +345,8 @@ void WaveData::Read(std::istream &is) {
       data_(j, i) =  k;
     }
   }
+
+  return 0;
 }
 
 

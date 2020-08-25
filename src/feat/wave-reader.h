@@ -93,7 +93,7 @@ class WaveInfo {
 
   /// 'is' should be opened in binary mode. Read() will throw on error.
   /// On success 'is' will be positioned at the beginning of wave data.
-  void Read(std::istream &is);
+  int32 Read(std::istream &is);
 
  private:
   BaseFloat samp_freq_;
@@ -113,7 +113,7 @@ class WaveData {
   /// Read() will throw on error.  It's valid to call Read() more than once--
   /// in this case it will destroy what was there before.
   /// "is" should be opened in binary mode.
-  void Read(std::istream &is);
+  int32 Read(std::istream &is);
 
   /// Write() will throw on error.   os should be opened in binary mode.
   void Write(std::ostream &os) const;
